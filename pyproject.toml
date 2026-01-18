@@ -1,0 +1,74 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "presidio"
+version = "0.1.0"
+description = "Unified wrapper and convenience facade for the Microsoft Presidio ecosystem."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+
+authors = [
+    { name = "Developers at PaperCloud Tech", email = "developers@papercloud.tech" }
+]
+
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Intended Audience :: Developers",
+    "Topic :: Security",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Text Processing",
+]
+
+keywords = [
+    "presidio",
+    "pii",
+    "data-privacy",
+    "anonymization",
+    "redaction",
+    "nlp",
+    "security"
+]
+
+dependencies = [
+    "presidio-analyzer",
+    "presidio-anonymizer",
+    "presidio-evaluator",
+    "presidio-image-redactor",
+    "presidio-structured"
+]
+
+[project.optional-dependencies]
+analysis = [
+    "presidio-analyzer"
+]
+
+anonymization = [
+    "presidio-analyzer",
+    "presidio-anonymizer"
+]
+
+evaluation = [
+    "presidio-evaluator"
+]
+
+image = [
+    "presidio-image-redactor"
+]
+
+structured = [
+    "presidio-structured"
+]
+
+all = []
+
+[project.urls]
+Homepage = "https://github.com/papercloudtech/presidio"
