@@ -1,0 +1,47 @@
+name: Publish to PyPI
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup UV
+        uses: astral-sh/setup-uv@v7
+
+      - name: Build Distributions
+        run: uv build
+
+      - name: Upload Distribution Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-dist
+          path: dist
+
+  publish-pypi:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    environment:
+      name: pypi
+      url: https://pypi.org/project/presidio
+
+    steps:
+      - name: Download Distribution Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-dist
+          path: dist
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
