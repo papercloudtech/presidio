@@ -17,7 +17,7 @@ In addition to the full installation, the package defines subgroup extras that c
 To install analysis related components:
 
 ```sh
-pip install presidio[analysis]
+pip install presidio[analyzer]
 ```
 
 To install anonymization support, including the required analyzer dependency:
