@@ -2,14 +2,17 @@
 
 import logging
 import os
+from contextlib import asynccontextmanager
 from logging.config import fileConfig
 from pathlib import Path
+from typing import Optional
 
-from flask import Flask, Response, jsonify, request
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from presidio_anonymizer import AnonymizerEngine, DeanonymizeEngine
 from presidio_anonymizer.entities import InvalidParamError
 from presidio_anonymizer.services.app_entities_convertor import AppEntitiesConvertor
-from werkzeug.exceptions import BadRequest, HTTPException
 
 DEFAULT_PORT = "3000"
 
@@ -27,96 +30,147 @@ WELCOME_MESSAGE = r"""
 """
 
 
-class Server:
-    """Flask server for anonymizer."""
+# --- Global engine instances ---
 
-    def __init__(self):
-        fileConfig(Path(Path(__file__).parent, LOGGING_CONF_FILE))
-        self.logger = logging.getLogger("presidio-anonymizer")
-        self.logger.setLevel(os.environ.get("LOG_LEVEL", self.logger.level))
-        self.app = Flask(__name__)
-        self.logger.info("Starting anonymizer engine")
-        self.anonymizer = AnonymizerEngine()
-        self.deanonymize = DeanonymizeEngine()
-        self.logger.info(WELCOME_MESSAGE)
+anonymizer: Optional[AnonymizerEngine] = None
+deanonymizer: Optional[DeanonymizeEngine] = None
+logger: Optional[logging.Logger] = None
 
-        @self.app.route("/health")
-        def health() -> str:
-            """Return basic health probe result."""
-            return "Presidio Anonymizer service is up"
 
-        @self.app.route("/anonymize", methods=["POST"])
-        def anonymize() -> Response:
-            content = request.get_json()
-            if not content:
-                raise BadRequest("Invalid request json")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application lifecycle."""
+    global anonymizer, deanonymizer, logger
 
-            anonymizers_config = AppEntitiesConvertor.operators_config_from_json(
-                content.get("anonymizers")
-            )
-            if AppEntitiesConvertor.check_custom_operator(anonymizers_config):
-                raise BadRequest("Custom type anonymizer is not supported")
+    fileConfig(Path(Path(__file__).parent, LOGGING_CONF_FILE))
+    logger = logging.getLogger("presidio-anonymizer")
+    logger.setLevel(os.environ.get("LOG_LEVEL", logger.level))
 
-            analyzer_results = AppEntitiesConvertor.analyzer_results_from_json(
-                content.get("analyzer_results")
-            )
-            anoymizer_result = self.anonymizer.anonymize(
-                text=content.get("text", ""),
-                analyzer_results=analyzer_results,
-                operators=anonymizers_config,
-            )
-            return Response(anoymizer_result.to_json(), mimetype="application/json")
+    logger.info("Starting anonymizer engine")
+    anonymizer = AnonymizerEngine()
+    deanonymizer = DeanonymizeEngine()
+    logger.info(WELCOME_MESSAGE)
 
-        @self.app.route("/deanonymize", methods=["POST"])
-        def deanonymize() -> Response:
-            content = request.get_json()
-            if not content:
-                raise BadRequest("Invalid request json")
-            text = content.get("text", "")
-            deanonymize_entities = AppEntitiesConvertor.deanonymize_entities_from_json(
-                content
-            )
-            deanonymize_config = AppEntitiesConvertor.operators_config_from_json(
-                content.get("deanonymizers")
-            )
-            deanonymized_response = self.deanonymize.deanonymize(
-                text=text, entities=deanonymize_entities, operators=deanonymize_config
-            )
-            return Response(
-                deanonymized_response.to_json(), mimetype="application/json"
-            )
+    yield
 
-        @self.app.route("/anonymizers", methods=["GET"])
-        def anonymizers():
-            """Return a list of supported anonymizers."""
-            return jsonify(self.anonymizer.get_anonymizers())
+    # Shutdown (cleanup if needed)
 
-        @self.app.route("/deanonymizers", methods=["GET"])
-        def deanonymizers():
-            """Return a list of supported deanonymizers."""
-            return jsonify(self.deanonymize.get_deanonymizers())
 
-        @self.app.errorhandler(InvalidParamError)
-        def invalid_param(err):
-            self.logger.warning(
-                f"Request failed with parameter validation error: {err.err_msg}"
-            )
-            return jsonify(error=err.err_msg), 422
+app = FastAPI(
+    title="Presidio Anonymizer",
+    description="PII anonymization and deanonymization service",
+    lifespan=lifespan,
+)
 
-        @self.app.errorhandler(HTTPException)
-        def http_exception(e):
-            return jsonify(error=e.description), e.code
 
-        @self.app.errorhandler(Exception)
-        def server_error(e):
-            self.logger.error(f"A fatal error occurred during execution: {e}")
-            return jsonify(error="Internal server error"), 500
+@app.get("/health", response_class=PlainTextResponse)
+async def health() -> str:
+    """Return basic health probe result."""
+    return "Presidio Anonymizer service is up"
 
-def create_app(): # noqa
-    server = Server()
-    return server.app
+
+@app.post("/anonymize")
+async def anonymize(request: Request) -> Response:
+    """Anonymize the given text."""
+    try:
+        content = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid request json")
+    if not content:
+        raise HTTPException(status_code=400, detail="Invalid request json")
+
+    anonymizers_config = AppEntitiesConvertor.operators_config_from_json(
+        content.get("anonymizers")
+    )
+    if AppEntitiesConvertor.check_custom_operator(anonymizers_config):
+        raise HTTPException(
+            status_code=400, detail="Custom type anonymizer is not supported"
+        )
+
+    analyzer_results = AppEntitiesConvertor.analyzer_results_from_json(
+        content.get("analyzer_results")
+    )
+    anonymizer_result = anonymizer.anonymize(
+        text=content.get("text", ""),
+        analyzer_results=analyzer_results,
+        operators=anonymizers_config,
+    )
+    return Response(anonymizer_result.to_json(), media_type="application/json")
+
+
+@app.post("/deanonymize")
+async def deanonymize(request: Request) -> Response:
+    """Deanonymize the given text."""
+    try:
+        content = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid request json")
+    if not content:
+        raise HTTPException(status_code=400, detail="Invalid request json")
+
+    text = content.get("text", "")
+    deanonymize_entities = AppEntitiesConvertor.deanonymize_entities_from_json(content)
+    deanonymize_config = AppEntitiesConvertor.operators_config_from_json(
+        content.get("deanonymizers")
+    )
+    deanonymized_response = deanonymizer.deanonymize(
+        text=text, entities=deanonymize_entities, operators=deanonymize_config
+    )
+    return Response(deanonymized_response.to_json(), media_type="application/json")
+
+
+@app.get("/anonymizers")
+async def get_anonymizers():
+    """Return a list of supported anonymizers."""
+    return anonymizer.get_anonymizers()
+
+
+@app.get("/deanonymizers")
+async def get_deanonymizers():
+    """Return a list of supported deanonymizers."""
+    return deanonymizer.get_deanonymizers()
+
+
+@app.exception_handler(InvalidParamError)
+async def invalid_param_handler(request: Request, exc: InvalidParamError):
+    """Handle invalid parameter errors."""
+    logger.warning(f"Request failed with parameter validation error: {exc.err_msg}")
+    return JSONResponse(
+        status_code=422,
+        content={"error": exc.err_msg},
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_handler(request: Request, exc: RequestValidationError):
+    """Handle request validation errors."""
+    return JSONResponse(
+        status_code=422,
+        content={"error": str(exc)},
+    )
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """Handle HTTP exceptions."""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": exc.detail},
+    )
+
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    """Handle general exceptions."""
+    logger.error(f"A fatal error occurred during execution: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"error": "Internal server error"},
+    )
+
 
 if __name__ == "__main__":
-    app = create_app()
+    import uvicorn
+
     port = int(os.environ.get("PORT", DEFAULT_PORT))
-    app.run(host="0.0.0.0", port=port)
+    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=False)

@@ -27,9 +27,8 @@ dependencies = [
 
 [project.optional-dependencies]
 server = [
-    "flask (>=1.1)",
-    "gunicorn; platform_system != 'Windows'",
-    "waitress; platform_system == 'Windows'"
+    "fastapi",
+    "uvicorn[standard]",
 ]
 ahds = [
     "azure-identity (>=1.23.0,<2.0.0)",

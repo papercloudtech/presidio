@@ -89,7 +89,7 @@ More information on installation can be found [here](image-redactor/index.md#ins
 
 ## Using Docker
 
-Presidio can expose REST endpoints for each service using Flask and Docker.
+Presidio can expose REST endpoints for each service using FastAPI and Docker.
 To download the Presidio Docker containers, run the following command:
 
 !!! note "Note"

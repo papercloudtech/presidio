@@ -5,10 +5,15 @@ import pytest
 
 from common.assertions import equal_json_strings
 from common.methods import analyze, anonymize, analyzer_supported_entities
+from common.models import AnalyzeRequest, AnonymizeRequest, OperatorConfigModel
 
 
 def analyze_and_assert(analyzer_request, expected_response):
-    response_status, response_content = analyze(json.dumps(analyzer_request))
+    if isinstance(analyzer_request, AnalyzeRequest):
+        body = analyzer_request.model_dump_json()
+    else:
+        body = json.dumps(analyzer_request)
+    response_status, response_content = analyze(body)
     assert response_status == 200
     assert equal_json_strings(expected_response, response_content)
     analyzer_data = json.loads(response_content)
@@ -16,17 +21,21 @@ def analyze_and_assert(analyzer_request, expected_response):
 
 
 def anonymize_and_assert(anonymizer_request, expected_response):
-    response_status, response_content = anonymize(json.dumps(anonymizer_request))
+    if isinstance(anonymizer_request, AnonymizeRequest):
+        body = anonymizer_request.model_dump_json()
+    else:
+        body = json.dumps(anonymizer_request)
+    response_status, response_content = anonymize(body)
     assert response_status == 200
     assert equal_json_strings(expected_response, response_content)
 
 
 @pytest.mark.integration
 def test_given_text_with_pii_then_analyze_and_anonymize_successfully():
-    analyzer_request = {
-        "text": "John Smith drivers license is AC432223",
-        "language": "en",
-    }
+    analyzer_request = AnalyzeRequest(
+        text="John Smith drivers license is AC432223",
+        language="en",
+    )
 
     expected_response = """
     [
@@ -42,7 +51,7 @@ def test_given_text_with_pii_then_analyze_and_anonymize_successfully():
     analyzer_data = analyze_and_assert(analyzer_request, expected_response)
 
     anonymizer_request = {
-        "text": analyzer_request["text"],
+        "text": analyzer_request.text,
         "anonymizers": {
             "DEFAULT": {"type": "replace", "new_value": "ANONYMIZED"},
             "US_DRIVER_LICENSE": {
@@ -63,14 +72,10 @@ def test_given_text_with_pii_then_analyze_and_anonymize_successfully():
 
 @pytest.mark.integration
 def test_given_a_correct_analyze_input_high_threashold_then_anonymize_partially():
-    analyzer_request = json.loads(
-        """
-    {
-        "text": "John Smith drivers license is AC432223",
-        "language": "en",
-        "score_threshold": 0.7
-    }
-    """
+    analyzer_request = AnalyzeRequest(
+        text="John Smith drivers license is AC432223",
+        language="en",
+        score_threshold=0.7,
     )
 
     expected_response = """
@@ -82,7 +87,7 @@ def test_given_a_correct_analyze_input_high_threashold_then_anonymize_partially(
     analyzer_data = analyze_and_assert(analyzer_request, expected_response)
 
     anonymizer_request = {
-        "text": analyzer_request["text"],
+        "text": analyzer_request.text,
         "anonymizers": {
             "DEFAULT": {"type": "replace", "new_value": "ANONYMIZED"},
             "US_DRIVER_LICENSE": {
@@ -112,12 +117,12 @@ def test_given_a_correct_analyze_input_with_high_threshold_and_unmatched_entitie
     assert response_status == 200
     suppotred_entities = json.loads(response_content)
 
-    analyzer_request = {
-        "text": "John Smith drivers license is AC432223",
-        "language": "en",
-        "score_threshold": 0.7,
-        "entities": suppotred_entities,
-    }
+    analyzer_request = AnalyzeRequest(
+        text="John Smith drivers license is AC432223",
+        language="en",
+        score_threshold=0.7,
+        entities=suppotred_entities,
+    )
 
     expected_response = """
     [
@@ -128,7 +133,7 @@ def test_given_a_correct_analyze_input_with_high_threshold_and_unmatched_entitie
     analyzer_data = analyze_and_assert(analyzer_request, expected_response)
 
     anonymizer_request = {
-        "text": analyzer_request["text"],
+        "text": analyzer_request.text,
         "anonymizers": {
             "DEFAULT": {"type": "replace", "new_value": "ANONYMIZED"},
             "US_DRIVER_LICENSE": {
@@ -149,13 +154,9 @@ def test_given_a_correct_analyze_input_with_high_threshold_and_unmatched_entitie
 
 @pytest.mark.integration
 def test_given_an_unknown_entity_then_anonymize_uses_defaults():
-    analyzer_request = json.loads(
-        """
-    {
-        "text": "John Smith drivers license is AC432223",
-        "language": "en"
-    }
-    """
+    analyzer_request = AnalyzeRequest(
+        text="John Smith drivers license is AC432223",
+        language="en",
     )
 
     expected_response = """
@@ -172,7 +173,7 @@ def test_given_an_unknown_entity_then_anonymize_uses_defaults():
     analyzer_data = analyze_and_assert(analyzer_request, expected_response)
 
     anonymizer_request = {
-        "text": analyzer_request["text"],
+        "text": analyzer_request.text,
         "anonymizers": {"ABC": {"type": "replace", "new_value": "<PERSON>"}},
         "analyzer_results": analyzer_data,
     }
@@ -194,19 +195,21 @@ def test_demo_website_text_returns_correct_anonymized_version():
     language = "en"
     score_threshold = 0.35
 
-    analyzer_request = {
-        "text": text,
-        "language": language,
-        "score_threshold": score_threshold,
-    }
+    analyzer_request = AnalyzeRequest(
+        text=text,
+        language=language,
+        score_threshold=score_threshold,
+    )
 
     # Call analyzer
-    analyzer_status_code, analyzer_content = analyze(json.dumps(analyzer_request))
+    analyzer_status_code, analyzer_content = analyze(
+        analyzer_request.model_dump_json()
+    )
     analyzer_data = json.loads(analyzer_content)
 
     # Anonymizer request info
     anonymizer_request = {
-        "text": analyzer_request["text"],
+        "text": analyzer_request.text,
         "analyzer_results": analyzer_data,
     }
 

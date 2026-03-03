@@ -35,8 +35,9 @@ dependencies = [
 
 [project.optional-dependencies]
 server = [
-    "flask (>=1.1)",
-    "gunicorn"
+    "fastapi",
+    "uvicorn[standard]",
+    "python-multipart",
 ]
 
 [tool.poetry.group.dev.dependencies]

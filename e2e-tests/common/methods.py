@@ -1,5 +1,4 @@
 import base64
-import json
 import os
 
 import requests
@@ -9,6 +8,7 @@ from common.constants import (
     ANONYMIZER_BASE_URL,
     IMAGE_REDACTOR_BASE_URL,
 )
+from common.models import RedactJsonRequest
 
 DEFAULT_HEADERS = {"Content-Type": "application/json"}
 MULTIPART_HEADERS = {"Content-Type": "multipart/form-data"}
@@ -50,13 +50,19 @@ def analyzer_supported_entities(data):
 def redact(file, color_fill=None, json_payload=False):
     payload = __get_redact_payload(color_fill)
     if json_payload:
-        json_string = '{"image": "' + base64.b64encode(file.read()).decode("utf-8") + '"}'
+        image_b64 = base64.b64encode(file.read()).decode("utf-8")
+        req = RedactJsonRequest(image=image_b64)
         response = requests.post(
-            f"{IMAGE_REDACTOR_BASE_URL}/redact", json=json.loads(json_string), headers=DEFAULT_HEADERS
+            f"{IMAGE_REDACTOR_BASE_URL}/redact",
+            data=req.model_dump_json(),
+            headers=DEFAULT_HEADERS,
         )
     else:
         response = requests.post(
-        f"{IMAGE_REDACTOR_BASE_URL}/redact", files=__get_multipart_form_data(file), data=payload)
+            f"{IMAGE_REDACTOR_BASE_URL}/redact",
+            files=__get_multipart_form_data(file),
+            data=payload,
+        )
     return response
 
 
